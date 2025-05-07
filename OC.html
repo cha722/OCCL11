@@ -126,25 +126,48 @@
 <script>
 const roles = ["Animateur", "Maître des mots", "Maître des liens", "Maître des passages"];
 const teacherAccounts = { "omar": "omar1", "mllelagarrigue": "Mlle.VLagarrigue" };
-const studentAccounts = {"celinefawaz": "cfT8x3", "clarakaram": "ckL7z9", "ezelkhocheich": "ekW2f5", "firashusseini": "fhN5d2", "jadbaker": "jbR9t6", "joudemoubayed": "jmA3q1", "joyboualwan": "jbK6y8", "karimbounassar": "kbP4g7", "karimricha": "krZ3x6", "kinanhajjar": "khU7e2", "lamarbsat": "lbV2m5", "leasoubra": "lsY8r3", "mariakabalan": "mkF9d1", "maryasanyoura": "msH2z4", "miaramadan": "mrT7p6", "mohamadkojo": "mkN3q8", "nourazohbi": "nzJ5t9", "omarchaar": "ocG6b2", "rayajamal": "rjX3n7", "rayankarimeh": "rkE8y4", "raihammoud": "rhA2c3", "roysaghir": "rsU6d5", "samanajjar": "snM7x1", "samifayad": "sfL4t2", "samirakkadwattar": "sawP9f8", "sirinebetto": "sbQ1e6", "talalkantar": "tkD3z7"};
-const studentFullNames = {"celinefawaz": "Celine Fawaz", "clarakaram": "Clara Karam", "ezelkhocheich": "Ezel Khocheich", "firashusseini": "Firas Husseini", "jadbaker": "Jad Baker", "joudemoubayed": "Joude Moubayed", "joyboualwan": "Joy Bou Alwan", "karimbounassar": "Karim Bou Nassar", "karimricha": "Karim Richa", "kinanhajjar": "Kinan Hajjar", "lamarbsat": "Lamar Bsat", "leasoubra": "Lea Soubra", "mariakabalan": "Maria Kabalan", "maryasanyoura": "Marya Sanyoura", "miaramadan": "Mia Ramadan", "mohamadkojo": "Mohamad Kojo", "nourazohbi": "Noura Zohbi", "omarchaar": "Omar Chaar", "rayajamal": "Raya Jamal", "rayankarimeh": "Rayan Karimeh", "raihammoud": "Raï Hammoud", "roysaghir": "Roy Saghir", "samanajjar": "Sama Najjar", "samifayad": "Sami Fayad", "samirakkadwattar": "Samir Akkad Wattar", "sirinebetto": "Sirine Betto", "talalkantar": "Talal Kantar"};
+const studentAccounts = {
+  "celinefawaz": "cfT8x3", "clarakaram": "ckL7z9", "ezelkhocheich": "ekW2f5", "firashusseini": "fhN5d2",
+  "jadbaker": "jbR9t6", "joudemoubayed": "jmA3q1", "joyboualwan": "jbK6y8", "karimbounassar": "kbP4g7",
+  "karimricha": "krZ3x6", "kinanhajjar": "khU7e2", "lamarbsat": "lbV2m5", "leasoubra": "lsY8r3",
+  "mariakabalan": "mkF9d1", "maryasanyoura": "msH2z4", "miaramadan": "mrT7p6", "mohamadkojo": "mkN3q8",
+  "nourazohbi": "nzJ5t9", "omarchaar": "ocG6b2", "rayajamal": "rjX3n7", "rayankarimeh": "rkE8y4",
+  "raihammoud": "rhA2c3", "roysaghir": "rsU6d5", "samanajjar": "snM7x1", "samifayad": "sfL4t2",
+  "samirakkadwattar": "sawP9f8", "sirinebetto": "sbQ1e6", "talalkantar": "tkD3z7"
+};
+const studentFullNames = {
+  "celinefawaz": "Celine Fawaz", "clarakaram": "Clara Karam", "ezelkhocheich": "Ezel Khocheich",
+  "firashusseini": "Firas Husseini", "jadbaker": "Jad Baker", "joudemoubayed": "Joude Moubayed",
+  "joyboualwan": "Joy Bou Alwan", "karimbounassar": "Karim Bou Nassar", "karimricha": "Karim Richa",
+  "kinanhajjar": "Kinan Hajjar", "lamarbsat": "Lamar Bsat", "leasoubra": "Lea Soubra",
+  "mariakabalan": "Maria Kabalan", "maryasanyoura": "Marya Sanyoura", "miaramadan": "Mia Ramadan",
+  "mohamadkojo": "Mohamad Kojo", "nourazohbi": "Noura Zohbi", "omarchaar": "Omar Chaar",
+  "rayajamal": "Raya Jamal", "rayankarimeh": "Rayan Karimeh", "raihammoud": "Raï Hammoud",
+  "roysaghir": "Roy Saghir", "samanajjar": "Sama Najjar", "samifayad": "Sami Fayad",
+  "samirakkadwattar": "Samir Akkad Wattar", "sirinebetto": "Sirine Betto", "talalkantar": "Talal Kantar"
+};
 
 let notifications = JSON.parse(localStorage.getItem("notifications") || "[]");
 
 function showLoginForm() {
   document.getElementById("login-form").classList.remove("hidden");
 }
+
 function login() {
   const role = document.getElementById("role").value;
   const user = document.getElementById("username").value.trim().toLowerCase();
   const pass = document.getElementById("password").value.trim();
+
   if (role === "prof") {
     if (teacherAccounts[user] === pass) {
       document.getElementById("login-section").classList.add("hidden");
       document.getElementById("professor-section").classList.remove("hidden");
       afficherTableau();
       updateNotif();
-    } else alert("Identifiants professeur incorrects.");
+      showOmarButtonIfNeeded(user);
+    } else {
+      alert("Identifiants professeur incorrects.");
+    }
   } else if (role === "eleve") {
     if (studentAccounts[user] === pass) {
       localStorage.setItem("currentStudent", user);
@@ -153,19 +176,30 @@ function login() {
       document.getElementById("student-welcome").innerText = "Bonjour " + studentFullNames[user];
       loadBooks();
       updateRoles();
-    } else alert("Identifiants élève incorrects.");
+    } else {
+      alert("Identifiants élève incorrects.");
+    }
   }
 }
+
 function loadBooks() {
   const bookSelect = document.getElementById("book");
-  const books = ['La belle des eaux', 'Les petites reines', 'La 6ème', 'Mes parents sont dans ma classe', 'Fils de sorcière', 'Niin', 'Une incroyable histoire', 'Jefferson', 'Trefle d or', 'Le fermier Gill', '153 jours en hiver', 'Les 2 bossus', 'Le journal d une grosse patate', 'Reves amers', 'Un drole d ange gardien', 'Panique dans la mythologie', 'Mon père est une saucisse', 'Les cousins Karlson', 'Télémaque', 'Hunter x hunter', 'Dieux et héros des romains', 'Theo', '6e pire année', 'Swimming', 'L’enfant océan', 'Mimsy Pocket', 'Tobie Lolness', 'Dans le grand bain', 'Le mystère Dédale', 'Charlemagne', 'Athéna', 'L’Ile sous la mer'];
+  const books = ['La belle des eaux', 'Les petites reines', 'La 6ème', 'Mes parents sont dans ma classe',
+    'Fils de sorcière', 'Niin', 'Une incroyable histoire', 'Jefferson', 'Trefle d or', 'Le fermier Gill',
+    '153 jours en hiver', 'Les 2 bossus', 'Le journal d une grosse patate', 'Reves amers',
+    'Un drole d ange gardien', 'Panique dans la mythologie', 'Mon père est une saucisse',
+    'Les cousins Karlson', 'Télémaque', 'Hunter x hunter', 'Dieux et héros des romains', 'Theo',
+    '6e pire année', 'Swimming', 'L’enfant océan', 'Mimsy Pocket', 'Tobie Lolness', 'Dans le grand bain',
+    'Le mystère Dédale', 'Charlemagne', 'Athéna', 'L’Ile sous la mer'];
+
   books.forEach(book => {
-    let opt = document.createElement("option");
-    opt.textContent = book;
+    const opt = document.createElement("option");
     opt.value = book;
+    opt.textContent = book;
     bookSelect.appendChild(opt);
   });
 }
+
 function updateRoles() {
   const book = document.getElementById("book").value;
   const student = localStorage.getItem("currentStudent");
@@ -181,24 +215,29 @@ function updateRoles() {
   });
   document.getElementById("roleChoice").innerHTML = options;
 }
+
 function enregistrerRole() {
   const book = document.getElementById("book").value;
   const role = document.getElementById("roleChoice").value;
   const student = localStorage.getItem("currentStudent");
+
   if (!book || !role) return alert("Sélectionne un livre et un rôle.");
   let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   const group = data.filter(e => e.book === book);
+
   if (group.length >= 4) return alert("Ce livre est déjà complet.");
   if (group.find(e => e.role === role)) return alert("Ce rôle est déjà pris.");
+
   const newEntry = { book, role, student, date: new Date().toLocaleDateString() };
   data.push(newEntry);
   localStorage.setItem("cercleData", JSON.stringify(data));
-  alert("Ton rôle est enregistré !");
   notifications.push(`${student} a emprunté le livre "${book}"`);
   localStorage.setItem("notifications", JSON.stringify(notifications));
+  alert("Ton rôle est enregistré !");
   updateNotif();
   updateRoles();
 }
+
 function afficherTableau() {
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   const grouped = {};
@@ -206,6 +245,7 @@ function afficherTableau() {
     if (!grouped[entry.book]) grouped[entry.book] = [];
     grouped[entry.book].push(entry);
   });
+
   let html = "";
   for (let livre in grouped) {
     const groupe = grouped[livre];
@@ -219,10 +259,12 @@ function afficherTableau() {
   }
   document.getElementById("book-table").innerHTML = html || "Aucune donnée.";
 }
+
 function updateNotif() {
   const notif = JSON.parse(localStorage.getItem("notifications") || "[]");
   document.getElementById("notif-count").innerText = notif.length;
 }
+
 function voirHistorique() {
   const student = localStorage.getItem("currentStudent");
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
@@ -235,6 +277,7 @@ function voirHistorique() {
   document.getElementById("historique-eleve").classList.remove("hidden");
   document.getElementById("historique-eleve").innerHTML = html;
 }
+
 function voirHistoriqueTous() {
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   let html = "<h4>Historique complet :</h4><ul>";
@@ -244,6 +287,7 @@ function voirHistoriqueTous() {
   html += "</ul>";
   alert(html);
 }
+
 function clearStudentHistoryPrompt() {
   const prof = document.getElementById("username").value.trim().toLowerCase();
   if (prof !== "omar") {
@@ -258,8 +302,43 @@ function clearStudentHistoryPrompt() {
   alert("Historique de l'élève supprimé.");
   afficherTableau();
 }
-updateNotif();
 
+// ✅ NOUVEAU BOUTON : supprimer UN livre pour UN élève
+function clearStudentBookEntry() {
+  const prof = document.getElementById("username").value.trim().toLowerCase();
+  if (prof !== "omar") {
+    alert("Seul Omar peut utiliser cette fonction.");
+    return;
+  }
+  const studentId = prompt("Entrez l'identifiant de l'élève (ex: celinefawaz)");
+  if (!studentId || !(studentId in studentFullNames)) {
+    alert("Identifiant invalide.");
+    return;
+  }
+  const bookTitle = prompt("Entrez le titre exact du livre à supprimer (ex: Jefferson)");
+  if (!bookTitle) return;
+
+  let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
+  const initialLength = data.length;
+  data = data.filter(e => !(e.student === studentId && e.book === bookTitle));
+  const deletedCount = initialLength - data.length;
+
+  if (deletedCount > 0) {
+    localStorage.setItem("cercleData", JSON.stringify(data));
+    alert(`Le livre "${bookTitle}" a été retiré pour ${studentFullNames[studentId]}.`);
+    afficherTableau();
+  } else {
+    alert("Aucune donnée trouvée avec ces informations.");
+  }
+}
+
+// ✅ Cacher/montrer le bouton spécial pour Omar
+function showOmarButtonIfNeeded(profName) {
+  const btn = document.getElementById("clear-book-entry-button");
+  if (btn) btn.style.display = (profName === "omar") ? "inline-block" : "none";
+}
+
+updateNotif();
 </script>
 </body>
 </html>
