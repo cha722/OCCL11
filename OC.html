@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Cercle de Lecture</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
   <style>
     body {
       background: linear-gradient(135deg, #e0f7fa, #e1f5fe);
@@ -134,9 +135,36 @@
       border-radius: 10px;
       border: 1px solid #dee2e6;
     }
+    
+    .forgot-password {
+      text-align: center;
+      margin-top: 15px;
+      color: #0d6efd;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+
+    .password-reset-btn {
+      background-color: #ffc107;
+      color: #000;
+    }
+
+    .password-reset-btn:hover {
+      background-color: #e0a800;
+    }
+
+    .notification-badge {
+      background-color: #dc3545;
+      color: white;
+      border-radius: 50%;
+      padding: 2px 6px;
+      font-size: 12px;
+      margin-left: 5px;
+    }
   </style>
 </head>
 <body>
+  <!-- Login Section -->
   <div class="container" id="login-section">
     <h2>Connexion</h2>
     <label>Es-tu un élève ou un professeur ?</label>
@@ -151,9 +179,21 @@
       <label>Mot de passe</label>
       <input id="password" type="password"/>
       <button onclick="login()">Se connecter</button>
+      <div class="forgot-password" onclick="showForgotPassword()">Mot de passe oublié ?</div>
+    </div>
+    
+    <!-- Forgot Password Form -->
+    <div class="hidden" id="forgot-password-form">
+      <h3>Réinitialisation du mot de passe</h3>
+      <label>Identifiant élève</label>
+      <input id="forgot-username" type="text"/>
+      <button onclick="requestPasswordReset()">Demander une réinitialisation</button>
+      <button onclick="hideForgotPassword()">Annuler</button>
+      <div id="forgot-message" class="hidden" style="margin-top:15px;"></div>
     </div>
   </div>
 
+  <!-- Student Section -->
   <div class="container hidden" id="student-section">
     <h3 id="student-welcome"></h3>
     <div id="student-message" class="hidden"></div>
@@ -166,6 +206,7 @@
     <div class="hidden" id="historique-eleve"></div>
   </div>
 
+  <!-- Professor Section -->
   <div class="container hidden" id="professor-section">
     <div class="notif-area">
       <span>🔔 Notifications : </span><span id="notif-count">0</span>
@@ -195,6 +236,13 @@
         <ul id="sent-messages"></ul>
       </div>
     </div>
+    
+    <button class="section-toggle" onclick="toggleSection('password-section')">🔐 Gestion des mots de passe</button>
+    <div id="password-section" class="hidden section-content">
+      <h3>Gestion des mots de passe élèves</h3>
+      <div id="student-passwords-table"></div>
+      <div id="reset-notifications"></div>
+    </div>
 
     <h3>Tableau de gestion (Professeur)</h3>
     <button onclick="voirHistoriqueTous()">Voir tout l'historique</button>
@@ -220,12 +268,13 @@ const books = [
   "Athéna", "L'Ile sous la mer"
 ];
 
-const teacherAccounts = {
+// Original passwords (used only for initial hashing)
+const teacherOriginalPasswords = {
   "omarc": "ohc",
   "mllelagarrigue": "Mlle.VLagarrigue"
 };
 
-const studentAccounts = {
+const studentOriginalPasswords = {
   "celinefawaz": "cfT8x3", "clarakaram": "ckL7z9", "ezelkhocheich": "ekW2f5", "firashusseini": "fhN5d2",
   "jadbaker": "jbR9t6", "joudemoubayed": "jmA3q1", "joyboualwan": "jbK6y8", "karimbounassar": "kbP4g7",
   "karimricha": "krZ3x6", "kinanhajjar": "khU7e2", "lamarbsat": "lbV2m5", "leasoubra": "lsY8r3",
@@ -248,32 +297,141 @@ const studentFullNames = {
 };
 
 const BIN_ID = "681cc2988960c979a59593c4";
+const RESET_REQUESTS_BIN_ID = "681cc2988960c979a59593c5"; // Separate bin for reset requests
 const API_KEY = "$2a$10$e8COjJNqV/ReJs5XiIW7aOntP2QEh3F8EDXCeUmx4oMyRzg2NHobm";
+
+// Hashed passwords storage
+let teacherAccounts = {};
+let studentAccounts = {};
+
+// Password reset requests
+let passwordResetRequests = [];
+
+// === Password Hashing ===
+function hashPassword(password) {
+  return CryptoJS.SHA256(password).toString();
+}
+
+// Initialize hashed passwords
+function initializeHashedPasswords() {
+  // Hash teacher passwords
+  for (const [user, pass] of Object.entries(teacherOriginalPasswords)) {
+    teacherAccounts[user] = hashPassword(pass);
+  }
+  
+  // Hash student passwords
+  for (const [user, pass] of Object.entries(studentOriginalPasswords)) {
+    studentAccounts[user] = hashPassword(pass);
+  }
+}
+
+// === Reset Requests Management ===
+async function loadResetRequests() {
+  try {
+    const response = await fetch(`https://api.jsonbin.io/v3/b/${RESET_REQUESTS_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": API_KEY }
+    });
+    const json = await response.json();
+    passwordResetRequests = json.record?.requests || [];
+    localStorage.setItem("passwordResetRequests", JSON.stringify(passwordResetRequests));
+  } catch (error) {
+    console.error("Error loading reset requests:", error);
+    passwordResetRequests = JSON.parse(localStorage.getItem("passwordResetRequests") || "[]");
+  }
+}
+
+async function saveResetRequests() {
+  const requestsToSave = passwordResetRequests.filter(req => {
+    // Keep only requests from the last 7 days
+    const requestDate = new Date(req.timestamp);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return requestDate > weekAgo;
+  });
+
+  try {
+    await fetch(`https://api.jsonbin.io/v3/b/${RESET_REQUESTS_BIN_ID}`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": API_KEY
+      },
+      body: JSON.stringify({ requests: requestsToSave })
+    });
+    localStorage.setItem("passwordResetRequests", JSON.stringify(requestsToSave));
+    passwordResetRequests = requestsToSave;
+  } catch (error) {
+    console.error("Error saving reset requests:", error);
+    localStorage.setItem("passwordResetRequests", JSON.stringify(requestsToSave));
+  }
+}
 
 // === Login Functions ===
 function showLoginForm() {
   document.getElementById("login-form").classList.remove("hidden");
 }
 
+function showForgotPassword() {
+  document.getElementById("login-form").classList.add("hidden");
+  document.getElementById("forgot-password-form").classList.remove("hidden");
+}
+
+function hideForgotPassword() {
+  document.getElementById("forgot-password-form").classList.add("hidden");
+  document.getElementById("login-form").classList.remove("hidden");
+  document.getElementById("forgot-message").classList.add("hidden");
+}
+
+async function requestPasswordReset() {
+  const studentId = document.getElementById("forgot-username").value.trim().toLowerCase();
+  if (!studentId || !studentAccounts[studentId]) {
+    document.getElementById("forgot-message").innerText = "Identifiant invalide";
+    document.getElementById("forgot-message").classList.remove("hidden");
+    return;
+  }
+  
+  // Add to reset requests
+  passwordResetRequests.push({
+    student: studentId,
+    name: studentFullNames[studentId],
+    timestamp: new Date().toISOString()
+  });
+  
+  await saveResetRequests();
+  
+  document.getElementById("forgot-message").innerText = `Demande envoyée à Omar pour ${studentFullNames[studentId]}`;
+  document.getElementById("forgot-message").classList.remove("hidden");
+  
+  // Update notifications
+  updateNotif();
+}
+
 function login() {
   const role = document.getElementById("role").value;
   const user = document.getElementById("username").value.trim().toLowerCase();
   const pass = document.getElementById("password").value.trim();
+  const passHash = hashPassword(pass);
 
-  if (role === "prof" && teacherAccounts[user] === pass) {
+  if (role === "prof" && teacherAccounts[user] === passHash) {
     document.getElementById("login-section").classList.add("hidden");
     document.getElementById("professor-section").classList.remove("hidden");
-    if (user === "mllelagarrigue") {
+    
+    // Show/hide clear history button based on user
+    if (user === "omarc" || user === "mllelagarrigue") {
+      document.getElementById("clear-history-button").style.display = "block";
+    } else {
       document.getElementById("clear-history-button").style.display = "none";
     }
+    
     loadOnlineData((data) => {
       localStorage.setItem("cercleData", JSON.stringify(data));
       afficherTableau();
       updateNotif();
       loadAgenda();
       loadMessages();
+      showStudentPasswords();
     });
-  } else if (role === "eleve" && studentAccounts[user] === pass) {
+  } else if (role === "eleve" && studentAccounts[user] === passHash) {
     localStorage.setItem("currentStudent", user);
     document.getElementById("login-section").classList.add("hidden");
     document.getElementById("student-section").classList.remove("hidden");
@@ -423,6 +581,70 @@ function afficherTableau() {
   document.getElementById("book-table").innerHTML = html || "Aucune donnée.";
 }
 
+function showStudentPasswords() {
+  let html = `<table>
+    <tr><th>Élève</th><th>Actions</th><th>Demandes de réinitialisation</th></tr>`;
+  
+  // Group reset requests by student
+  const requestsByStudent = {};
+  passwordResetRequests.forEach(req => {
+    requestsByStudent[req.student] = (requestsByStudent[req.student] || 0) + 1;
+  });
+
+  // Sort students alphabetically
+  const sortedStudents = Object.keys(studentAccounts).sort((a, b) => {
+    return studentFullNames[a].localeCompare(studentFullNames[b]);
+  });
+
+  sortedStudents.forEach(student => {
+    const requestCount = requestsByStudent[student] || 0;
+    html += `
+    <tr>
+      <td>${studentFullNames[student]}</td>
+      <td>
+        <button class="password-reset-btn" onclick="resetPassword('${student}')">
+          Réinitialiser le mot de passe
+        </button>
+      </td>
+      <td>
+        ${requestCount > 0 ? 
+          `<span class="notification-badge">${requestCount}</span> ${requestCount > 1 ? 'demandes' : 'demande'}` : 
+          'Aucune demande'}
+      </td>
+    </tr>`;
+  });
+  
+  html += "</table>";
+  document.getElementById("student-passwords-table").innerHTML = html;
+}
+
+async function resetPassword(student) {
+  // Generate a random 6-character password
+  const newPassword = Math.random().toString(36).slice(-6);
+  const newHash = hashPassword(newPassword);
+  
+  // Update the password
+  studentAccounts[student] = newHash;
+  
+  // Clear any reset requests for this student
+  passwordResetRequests = passwordResetRequests.filter(req => req.student !== student);
+  await saveResetRequests();
+  
+  // Show confirmation
+  const notifArea = document.getElementById("reset-notifications");
+  notifArea.innerHTML = `
+    <div style="background:#d4edda;padding:10px;border-radius:5px;margin-top:10px;">
+      <strong>Mot de passe réinitialisé pour ${studentFullNames[student]}</strong><br>
+      Nouveau mot de passe: <strong>${newPassword}</strong><br>
+      <small>Donnez ce mot de passe à l'élève et demandez-lui de ne pas le partager.</small>
+    </div>
+  `;
+  
+  // Update the display
+  showStudentPasswords();
+  updateNotif();
+}
+
 function voirHistoriqueTous() {
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   let html = "<h4>Historique complet :</h4><ul>";
@@ -434,18 +656,14 @@ function voirHistoriqueTous() {
 }
 
 function clearStudentHistoryPrompt() {
-  const prof = document.getElementById("username").value.trim().toLowerCase();
-  if (prof !== "omarc") {
-    alert("Veuillez contacter Omar Chaar pour activer ce bouton.");
-    return;
-  }
   const studentId = prompt("Entrez l'identifiant de l'élève à effacer (ex: celinefawaz)");
   if (!studentId) return;
+  
   let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   data = data.filter(e => e.student !== studentId);
   localStorage.setItem("cercleData", JSON.stringify(data));
   saveOnlineData(data);
-  alert("Historique de l'élève supprimé.");
+  alert(`Historique de ${studentFullNames[studentId] || studentId} supprimé.`);
   afficherTableau();
 }
 
@@ -535,11 +753,13 @@ function toggleSection(id) {
 
 function updateNotif() {
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
-  document.getElementById("notif-count").innerText = data.length;
+  document.getElementById("notif-count").innerText = data.length + passwordResetRequests.length;
 }
 
 // Initialize
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("DOMContentLoaded", async () => {
+  initializeHashedPasswords();
+  await loadResetRequests();
   loadAgenda();
   loadMessages();
   updateNotif();
