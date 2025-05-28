@@ -161,6 +161,33 @@
       font-size: 12px;
       margin-left: 5px;
     }
+
+    .message-card {
+      background-color: #f8f9fa;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 15px;
+      border-left: 4px solid #0d6efd;
+    }
+
+    .message-meta {
+      font-size: 0.9em;
+      color: #6c757d;
+      margin-bottom: 10px;
+    }
+
+    .reply-btn {
+      background-color: #6c757d;
+      padding: 5px 10px;
+      font-size: 0.8em;
+    }
+
+    .reply-form {
+      margin-top: 10px;
+      padding: 10px;
+      background-color: #e9ecef;
+      border-radius: 5px;
+    }
   </style>
 </head>
 <body>
@@ -197,6 +224,13 @@
   <div class="container hidden" id="student-section">
     <h3 id="student-welcome"></h3>
     <div id="student-message" class="hidden"></div>
+    
+    <!-- Messages section (always visible) -->
+    <div id="student-messages-section" class="section-content">
+      <h4>Messages</h4>
+      <div id="student-messages-list"></div>
+    </div>
+    
     <label for="book">Choisir un livre</label>
     <select id="book" onchange="updateRoles()"></select>
     <label for="roleChoice">Choisir un rôle</label>
@@ -245,10 +279,9 @@
     </div>
 
     <h3>Tableau de gestion (Professeur)</h3>
-    <button onclick="voirHistoriqueTous()">Voir tout l'historique</button>
     <button onclick="exportHistorique('pdf')">📄 Exporter en PDF</button>
-    <button onclick="exportHistorique('excel')">📊 Exporter en Excel</button>
     <button id="clear-history-button" onclick="clearStudentHistoryPrompt()">🧹 Effacer l'historique d'un élève</button>
+    <button onclick="removeBookFromHistoryPrompt()">📖 Supprimer un livre d'un élève</button>
 
     <div id="book-table"></div>
   </div>
@@ -297,14 +330,16 @@ const studentFullNames = {
 };
 
 const BIN_ID = "681cc2988960c979a59593c4";
-const RESET_REQUESTS_BIN_ID = "681cc2988960c979a59593c5"; // Separate bin for reset requests
+const MESSAGES_BIN_ID = "681cc2988960c979a59593c5"; // Separate bin for messages
+const RESET_REQUESTS_BIN_ID = "681cc2988960c979a59593c6"; // Separate bin for reset requests
 const API_KEY = "$2a$10$e8COjJNqV/ReJs5XiIW7aOntP2QEh3F8EDXCeUmx4oMyRzg2NHobm";
 
 // Hashed passwords storage
 let teacherAccounts = {};
 let studentAccounts = {};
 
-// Password reset requests
+// Messages and reset requests
+let messages = [];
 let passwordResetRequests = [];
 
 // === Password Hashing ===
@@ -325,44 +360,75 @@ function initializeHashedPasswords() {
   }
 }
 
-// === Reset Requests Management ===
-async function loadResetRequests() {
+// === Data Management ===
+async function loadData() {
   try {
-    const response = await fetch(`https://api.jsonbin.io/v3/b/${RESET_REQUESTS_BIN_ID}/latest`, {
+    // Load main data
+    const dataResponse = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
       headers: { "X-Master-Key": API_KEY }
     });
-    const json = await response.json();
-    passwordResetRequests = json.record?.requests || [];
+    const dataJson = await dataResponse.json();
+    localStorage.setItem("cercleData", JSON.stringify(dataJson.record?.data || []));
+    
+    // Load messages
+    const messagesResponse = await fetch(`https://api.jsonbin.io/v3/b/${MESSAGES_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": API_KEY }
+    });
+    const messagesJson = await messagesResponse.json();
+    messages = messagesJson.record?.messages || [];
+    localStorage.setItem("messages", JSON.stringify(messages));
+    
+    // Load reset requests
+    const resetResponse = await fetch(`https://api.jsonbin.io/v3/b/${RESET_REQUESTS_BIN_ID}/latest`, {
+      headers: { "X-Master-Key": API_KEY }
+    });
+    const resetJson = await resetResponse.json();
+    passwordResetRequests = resetJson.record?.requests || [];
     localStorage.setItem("passwordResetRequests", JSON.stringify(passwordResetRequests));
+    
+    return {
+      data: dataJson.record?.data || [],
+      messages: messages,
+      resetRequests: passwordResetRequests
+    };
   } catch (error) {
-    console.error("Error loading reset requests:", error);
-    passwordResetRequests = JSON.parse(localStorage.getItem("passwordResetRequests") || "[]");
+    console.error("Error loading data:", error);
+    return {
+      data: JSON.parse(localStorage.getItem("cercleData") || "[]"),
+      messages: JSON.parse(localStorage.getItem("messages") || "[]"),
+      resetRequests: JSON.parse(localStorage.getItem("passwordResetRequests") || "[]")
+    };
   }
 }
 
-async function saveResetRequests() {
-  const requestsToSave = passwordResetRequests.filter(req => {
-    // Keep only requests from the last 7 days
-    const requestDate = new Date(req.timestamp);
-    const weekAgo = new Date();
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    return requestDate > weekAgo;
-  });
-
+async function saveData(dataType, content) {
+  const binId = {
+    'data': BIN_ID,
+    'messages': MESSAGES_BIN_ID,
+    'resetRequests': RESET_REQUESTS_BIN_ID
+  }[dataType];
+  
   try {
-    await fetch(`https://api.jsonbin.io/v3/b/${RESET_REQUESTS_BIN_ID}`, {
+    await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
         "X-Master-Key": API_KEY
       },
-      body: JSON.stringify({ requests: requestsToSave })
+      body: JSON.stringify(content)
     });
-    localStorage.setItem("passwordResetRequests", JSON.stringify(requestsToSave));
-    passwordResetRequests = requestsToSave;
+    localStorage.setItem(
+      dataType === 'data' ? 'cercleData' : 
+      dataType === 'messages' ? 'messages' : 'passwordResetRequests', 
+      JSON.stringify(content)
+    );
   } catch (error) {
-    console.error("Error saving reset requests:", error);
-    localStorage.setItem("passwordResetRequests", JSON.stringify(requestsToSave));
+    console.error(`Error saving ${dataType}:`, error);
+    localStorage.setItem(
+      dataType === 'data' ? 'cercleData' : 
+      dataType === 'messages' ? 'messages' : 'passwordResetRequests', 
+      JSON.stringify(content)
+    );
   }
 }
 
@@ -397,7 +463,7 @@ async function requestPasswordReset() {
     timestamp: new Date().toISOString()
   });
   
-  await saveResetRequests();
+  await saveData('resetRequests', { requests: passwordResetRequests });
   
   document.getElementById("forgot-message").innerText = `Demande envoyée à Omar pour ${studentFullNames[studentId]}`;
   document.getElementById("forgot-message").classList.remove("hidden");
@@ -406,7 +472,7 @@ async function requestPasswordReset() {
   updateNotif();
 }
 
-function login() {
+async function login() {
   const role = document.getElementById("role").value;
   const user = document.getElementById("username").value.trim().toLowerCase();
   const pass = document.getElementById("password").value.trim();
@@ -423,58 +489,38 @@ function login() {
       document.getElementById("clear-history-button").style.display = "none";
     }
     
-    loadOnlineData((data) => {
-      localStorage.setItem("cercleData", JSON.stringify(data));
-      afficherTableau();
-      updateNotif();
-      loadAgenda();
-      loadMessages();
-      showStudentPasswords();
-    });
+    const { data, messages: loadedMessages, resetRequests } = await loadData();
+    messages = loadedMessages;
+    passwordResetRequests = resetRequests;
+    
+    localStorage.setItem("cercleData", JSON.stringify(data));
+    afficherTableau();
+    updateNotif();
+    loadAgenda();
+    loadMessages();
+    showStudentPasswords();
   } else if (role === "eleve" && studentAccounts[user] === passHash) {
     localStorage.setItem("currentStudent", user);
     document.getElementById("login-section").classList.add("hidden");
     document.getElementById("student-section").classList.remove("hidden");
     document.getElementById("student-welcome").innerText = "Bonjour " + studentFullNames[user];
-    loadOnlineData((data) => {
-      localStorage.setItem("cercleData", JSON.stringify(data));
-      loadBooks();
-      updateRoles();
-      showStudentMessage(user);
-      
-      const allRoles = data.filter(e => e.student === user).map(e => e.role);
-      const uniqueRoles = [...new Set(allRoles)];
-      if (uniqueRoles.length === 4) {
-        alert("Tu as complété les 4 rôles. Tu peux maintenant recommencer avec les mêmes rôles sur d'autres livres !");
-      }
-    });
+    
+    const { data, messages: loadedMessages } = await loadData();
+    messages = loadedMessages;
+    
+    localStorage.setItem("cercleData", JSON.stringify(data));
+    loadBooks();
+    updateRoles();
+    showStudentMessages(user);
+    
+    const allRoles = data.filter(e => e.student === user).map(e => e.role);
+    const uniqueRoles = [...new Set(allRoles)];
+    if (uniqueRoles.length === 4) {
+      alert("Tu as complété les 4 rôles. Tu peux maintenant recommencer avec les mêmes rôles sur d'autres livres !");
+    }
   } else {
     alert("Identifiants incorrects.");
   }
-}
-
-// === Data Management ===
-function loadOnlineData(callback) {
-  fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-    headers: { "X-Master-Key": API_KEY }
-  })
-    .then(res => res.json())
-    .then(json => callback(json.record.data))
-    .catch(() => {
-      const localData = JSON.parse(localStorage.getItem("cercleData") || "[]");
-      callback(localData);
-    });
-}
-
-function saveOnlineData(data) {
-  fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Master-Key": API_KEY
-    },
-    body: JSON.stringify({ data })
-  }).catch(err => console.error("Erreur de sauvegarde en ligne:", err));
 }
 
 // === Student Functions ===
@@ -516,14 +562,14 @@ function updateRoles() {
   document.getElementById("roleChoice").innerHTML = options;
 }
 
-function enregistrerRole() {
+async function enregistrerRole() {
   const book = document.getElementById("book").value;
   const role = document.getElementById("roleChoice").value;
   const student = localStorage.getItem("currentStudent");
   
   if (!book || !role) return alert("Sélectionne un livre et un rôle.");
   
-  let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
+  let data = JSON.parse(localStorage.getItem("cercleData") || []);
   const group = data.filter(e => e.book === book);
   
   if (group.length >= 4) return alert("Ce livre est déjà complet.");
@@ -532,7 +578,7 @@ function enregistrerRole() {
   const newEntry = { book, role, student, date: new Date().toLocaleDateString() };
   data.push(newEntry);
   localStorage.setItem("cercleData", JSON.stringify(data));
-  saveOnlineData(data);
+  await saveData('data', { data: data });
   alert("Ton rôle est enregistré !");
   updateNotif();
   
@@ -547,7 +593,7 @@ function enregistrerRole() {
 
 function voirHistorique() {
   const student = localStorage.getItem("currentStudent");
-  const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
+  const data = JSON.parse(localStorage.getItem("cercleData") || []);
   const historique = data.filter(e => e.student === student);
   let html = "<h4>Historique :</h4><ul>";
   historique.forEach(e => {
@@ -556,6 +602,117 @@ function voirHistorique() {
   html += "</ul>";
   document.getElementById("historique-eleve").classList.remove("hidden");
   document.getElementById("historique-eleve").innerHTML = html;
+}
+
+// === Message Functions ===
+function showStudentMessages(studentId) {
+  const today = new Date().toISOString().split('T')[0];
+  const studentMessages = messages.filter(m => 
+    m.to === studentId && m.start <= today && m.end >= today
+  );
+  
+  let html = '';
+  
+  if (studentMessages.length === 0) {
+    html = '<p>Aucun message pour le moment.</p>';
+  } else {
+    studentMessages.forEach((msg, index) => {
+      html += `
+      <div class="message-card">
+        <div class="message-meta">
+          Message du ${msg.start} au ${msg.end}
+        </div>
+        <p>${msg.text}</p>
+        ${msg.reply ? `
+          <div class="message-meta">Ta réponse:</div>
+          <p>${msg.reply}</p>
+        ` : `
+          <button class="reply-btn" onclick="showReplyForm(${index})">Répondre</button>
+          <div id="reply-form-${index}" class="reply-form hidden">
+            <textarea id="reply-text-${index}" placeholder="Votre réponse..."></textarea>
+            <button onclick="sendReply(${index})">Envoyer</button>
+          </div>
+        `}
+      </div>`;
+    });
+  }
+  
+  document.getElementById("student-messages-list").innerHTML = html;
+}
+
+function showReplyForm(index) {
+  document.getElementById(`reply-form-${index}`).classList.remove('hidden');
+}
+
+async function sendReply(index) {
+  const studentId = localStorage.getItem("currentStudent");
+  const replyText = document.getElementById(`reply-text-${index}`).value.trim();
+  
+  if (!replyText) {
+    alert("Veuillez écrire une réponse");
+    return;
+  }
+  
+  // Find the message in the array
+  const today = new Date().toISOString().split('T')[0];
+  const studentMessages = messages.filter(m => 
+    m.to === studentId && m.start <= today && m.end >= today
+  );
+  
+  if (index >= 0 && index < studentMessages.length) {
+    const originalMessage = studentMessages[index];
+    const messageIndex = messages.findIndex(m => 
+      m.to === originalMessage.to && 
+      m.text === originalMessage.text && 
+      m.start === originalMessage.start
+    );
+    
+    if (messageIndex !== -1) {
+      messages[messageIndex].reply = replyText;
+      messages[messageIndex].replyDate = new Date().toLocaleDateString();
+      await saveData('messages', { messages: messages });
+      showStudentMessages(studentId);
+    }
+  }
+}
+
+async function sendMessage() {
+  const to = document.getElementById("msg-to").value.trim().toLowerCase();
+  const msgText = document.getElementById("msg-text").value.trim();
+  const start = document.getElementById("msg-start").value;
+  const end = document.getElementById("msg-end").value;
+
+  if (!to || !msgText || !start || !end) return alert("Tous les champs sont requis.");
+  
+  if (!studentAccounts[to]) {
+    alert("Identifiant élève invalide");
+    return;
+  }
+  
+  messages.push({ 
+    to, 
+    text: msgText, 
+    start, 
+    end,
+    from: document.getElementById("username").value.trim().toLowerCase(),
+    date: new Date().toLocaleDateString()
+  });
+  
+  await saveData('messages', { messages: messages });
+  alert("Message envoyé !");
+  loadMessages();
+}
+
+function loadMessages() {
+  let html = '';
+  messages.forEach(msg => {
+    html += `<li>
+      À ${studentFullNames[msg.to] || msg.to} (${msg.start} ➜ ${msg.end}): 
+      ${msg.text}
+      ${msg.reply ? `<br><em>Réponse: ${msg.reply}</em>` : ''}
+    </li>`;
+  });
+  document.getElementById("sent-messages").innerHTML = html || "<li>Aucun message envoyé</li>";
 }
 
 // === Professor Functions ===
@@ -628,7 +785,7 @@ async function resetPassword(student) {
   
   // Clear any reset requests for this student
   passwordResetRequests = passwordResetRequests.filter(req => req.student !== student);
-  await saveResetRequests();
+  await saveData('resetRequests', { requests: passwordResetRequests });
   
   // Show confirmation
   const notifArea = document.getElementById("reset-notifications");
@@ -645,14 +802,42 @@ async function resetPassword(student) {
   updateNotif();
 }
 
-function voirHistoriqueTous() {
+async function removeBookFromHistoryPrompt() {
+  const studentId = prompt("Entrez l'identifiant de l'élève (ex: celinefawaz)");
+  if (!studentId) return;
+  
+  const bookTitle = prompt("Entrez le titre exact du livre à supprimer");
+  if (!bookTitle) return;
+  
+  let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
+  const initialLength = data.length;
+  
+  data = data.filter(e => !(e.student === studentId && e.book === bookTitle));
+  
+  if (data.length === initialLength) {
+    alert(`Aucune entrée trouvée pour ${studentFullNames[studentId] || studentId} avec le livre "${bookTitle}"`);
+    return;
+  }
+  
+  localStorage.setItem("cercleData", JSON.stringify(data));
+  await saveData('data', { data: data });
+  alert(`Livre "${bookTitle}" supprimé de l'historique de ${studentFullNames[studentId] || studentId}`);
+  afficherTableau();
+}
+
+function exportHistorique(format = "pdf") {
+  if (format !== "pdf") return;
+  
   const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
-  let html = "<h4>Historique complet :</h4><ul>";
+  const win = window.open("", "", "height=700,width=900");
+  win.document.write("<html><head><title>Historique</title><style>table{border-collapse:collapse;width:100%}td,th{border:1px solid #888;padding:8px}</style></head><body>");
+  win.document.write("<h2>Historique du Cercle de Lecture</h2><table><tr><th>Élève</th><th>Livre</th><th>Rôle</th><th>Date</th></tr>");
   data.forEach(e => {
-    html += `<li>${e.student} – ${e.book} – ${e.role} (${e.date})</li>`;
+    win.document.write(`<tr><td>${studentFullNames[e.student] || e.student}</td><td>${e.book}</td><td>${e.role}</td><td>${e.date}</td></tr>`);
   });
-  html += "</ul>";
-  alert(html);
+  win.document.write("</table></body></html>");
+  win.document.close();
+  win.print();
 }
 
 function clearStudentHistoryPrompt() {
@@ -662,42 +847,12 @@ function clearStudentHistoryPrompt() {
   let data = JSON.parse(localStorage.getItem("cercleData") || "[]");
   data = data.filter(e => e.student !== studentId);
   localStorage.setItem("cercleData", JSON.stringify(data));
-  saveOnlineData(data);
+  saveData('data', { data: data });
   alert(`Historique de ${studentFullNames[studentId] || studentId} supprimé.`);
   afficherTableau();
 }
 
-function exportHistorique(format = "pdf") {
-  const data = JSON.parse(localStorage.getItem("cercleData") || "[]");
-  let content = "Élève;Livre;Rôle;Date\n";
-  data.forEach(e => {
-    content += `${studentFullNames[e.student] || e.student};${e.book};${e.role};${e.date}\n`;
-  });
-
-  if (format === "excel") {
-    const blob = new Blob(["\uFEFF" + content], { type: "application/vnd.ms-excel" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "historique_cercle.xlsx";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  if (format === "pdf") {
-    const win = window.open("", "", "height=700,width=900");
-    win.document.write("<html><head><title>Historique</title><style>table{border-collapse:collapse;width:100%}td,th{border:1px solid #888;padding:8px}</style></head><body>");
-    win.document.write("<h2>Historique du Cercle de Lecture</h2><table><tr><th>Élève</th><th>Livre</th><th>Rôle</th><th>Date</th></tr>");
-    data.forEach(e => {
-      win.document.write(`<tr><td>${studentFullNames[e.student] || e.student}</td><td>${e.book}</td><td>${e.role}</td><td>${e.date}</td></tr>`);
-    });
-    win.document.write("</table></body></html>");
-    win.document.close();
-    win.print();
-  }
-}
-
-// === Agenda & Messages ===
+// === Agenda Functions ===
 function saveAgenda() {
   const content = document.getElementById("agenda-text").value;
   localStorage.setItem("agenda", content);
@@ -707,42 +862,6 @@ function saveAgenda() {
 function loadAgenda() {
   const agenda = localStorage.getItem("agenda") || "";
   document.getElementById("agenda-display").innerText = agenda;
-}
-
-function sendMessage() {
-  const to = document.getElementById("msg-to").value.trim().toLowerCase();
-  const msg = document.getElementById("msg-text").value;
-  const start = document.getElementById("msg-start").value;
-  const end = document.getElementById("msg-end").value;
-
-  if (!to || !msg || !start || !end) return alert("Tous les champs sont requis.");
-  
-  const messages = JSON.parse(localStorage.getItem("messages") || "[]");
-  messages.push({ to, msg, start, end });
-  localStorage.setItem("messages", JSON.stringify(messages));
-  alert("Message envoyé !");
-  loadMessages();
-}
-
-function loadMessages() {
-  const messages = JSON.parse(localStorage.getItem("messages") || "[]");
-  let html = '';
-  messages.forEach(m => {
-    html += `<li>À ${m.to}: ${m.msg} (${m.start} ➜ ${m.end})</li>`;
-  });
-  document.getElementById("sent-messages").innerHTML = html;
-}
-
-function showStudentMessage(user) {
-  const messages = JSON.parse(localStorage.getItem("messages") || "[]");
-  const today = new Date().toISOString().split('T')[0];
-  const msg = messages.find(m => m.to === user && m.start <= today && m.end >= today);
-  if (msg) {
-    const box = document.getElementById("student-message");
-    box.innerText = msg.msg;
-    box.classList.remove("hidden");
-    setTimeout(() => box.classList.add("hidden"), 5000);
-  }
 }
 
 // === UI Helpers ===
@@ -759,7 +878,7 @@ function updateNotif() {
 // Initialize
 window.addEventListener("DOMContentLoaded", async () => {
   initializeHashedPasswords();
-  await loadResetRequests();
+  await loadData();
   loadAgenda();
   loadMessages();
   updateNotif();
